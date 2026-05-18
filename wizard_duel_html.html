@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Wizard Duel ⚔️</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#07050f;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;font-family:'Segoe UI',sans-serif;padding:1rem}
+  #root{width:100%;max-width:600px}
+  ::-webkit-scrollbar{width:4px}
+  ::-webkit-scrollbar-track{background:#0f0c1a}
+  ::-webkit-scrollbar-thumb{background:#3d2d5a;border-radius:4px}
+  @keyframes popUp{0%{transform:scale(0) translateY(0);opacity:1}80%{transform:scale(1.4) translateY(-30px);opacity:1}100%{transform:scale(1) translateY(-60px);opacity:0}}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect } = React;
+
+const WIZARDS = [
+  { name:"Pyromancer",   emoji:"🔥", color:"#c0392b", light:"#fadbd8", spell:"fire",      hp:100 },
+  { name:"Frostweaver",  emoji:"❄️", color:"#2980b9", light:"#d6eaf8", spell:"ice",       hp:100 },
+  { name:"Stormcaller",  emoji:"⚡", color:"#8e44ad", light:"#e8daef", spell:"lightning", hp:100 },
+  { name:"Chaosbound",   emoji:"🌀", color:"#16a085", light:"#d1f2eb", spell:"chaos",     hp:100 },
+];
+
+const SPELLS = {
+  fire:[
+    {name:"Fireball",      emoji:"🔥", dmg:[18,28], mp:2, desc:"Hurls a blazing fireball",       backfire:0.10},
+    {name:"Inferno",       emoji:"🌋", dmg:[30,45], mp:4, desc:"Unleashes volcanic fury",        backfire:0.25},
+    {name:"Ember Curse",   emoji:"🕯️", dmg:[8,14],  mp:1, desc:"Burns target for 2 turns",       curse:"burning", backfire:0.05},
+    {name:"Phoenix Strike",emoji:"🦅", dmg:[20,35], mp:3, desc:"Deals damage + heals caster 10", heal:10, backfire:0.15},
+  ],
+  ice:[
+    {name:"Ice Shard",  emoji:"🧊", dmg:[15,25], mp:2, desc:"Piercing frozen spike",          backfire:0.08},
+    {name:"Blizzard",   emoji:"🌨️", dmg:[25,40], mp:4, desc:"Hits ALL enemies",               aoe:true, backfire:0.20},
+    {name:"Freeze",     emoji:"🥶", dmg:[5,10],  mp:1, desc:"Skips target's next turn",       freeze:true, backfire:0.05},
+    {name:"Ice Mirror", emoji:"🪞", dmg:[0,0],   mp:3, desc:"Reflects the next spell back",   reflect:true, backfire:0},
+  ],
+  lightning:[
+    {name:"Bolt",          emoji:"⚡", dmg:[20,30], mp:2, desc:"Fast crackling strike",              backfire:0.10},
+    {name:"Chain Lightning",emoji:"🌩️",dmg:[15,22], mp:3, desc:"Chains to up to 2 enemies",         chain:true, backfire:0.15},
+    {name:"Overload",      emoji:"💥", dmg:[35,50], mp:5, desc:"Massive damage — huge backfire risk",backfire:0.40},
+    {name:"Shock Curse",   emoji:"😵", dmg:[10,15], mp:2, desc:"Halves target's next spell damage",  curse:"shocked", backfire:0.10},
+  ],
+  chaos:[
+    {name:"Wild Surge", emoji:"🌀", dmg:[5,55],  mp:2, desc:"Completely random damage!",         backfire:0.20},
+    {name:"Frog Hex",   emoji:"🐸", dmg:[0,0],   mp:2, desc:"Turns target into a frog (skip turn)", frog:true, backfire:0.15},
+    {name:"Swap Souls", emoji:"🔄", dmg:[0,0],   mp:3, desc:"Swaps HP with target",              swap:true, backfire:0},
+    {name:"Chaos Nova", emoji:"🎆", dmg:[10,30], mp:4, desc:"Random chaos hits everyone",        nova:true, backfire:0.30},
+  ],
+};
+
+const CROWD = ["😱","🤩","😂","🙈","👏","😤","🎉","💀","😮","🔥"];
+const HIT_LINES   = ["The crowd gasps in disbelief!","A devastating blow echoes through the arena!","The ancient stones tremble!","Even the dragon in the stands winced!","Spectacular! The bards will sing of this!"];
+const MISS_LINES  = ["A spectacular failure!","Did they trip over their own robes?!","The spell fizzled like a wet candle!","Even the training dummies are embarrassed.","Maybe try pointing the wand the OTHER way."];
+const BF_LINES    = ["BACKFIRE! Chaos reigns supreme!","The spell had other plans entirely!","Magic: 1, Wizard: 0.","Perhaps read the spell book more carefully.","The audience is losing their minds!!"];
+const KILL_LINES  = ["ELIMINATED! They crumble dramatically!","Down they go! The crowd erupts!","Another one bites the arcane dust!"];
+const WIN_LINES   = ["VICTORY! The greatest wizard of the age!","Champion crowned! Glory eternal!","The arena bows to its new master!"];
+
+const rnd = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+const pick = a => a[Math.floor(Math.random()*a.length)];
+
+function App(){
+  const [phase,    setPhase]    = useState("setup");
+  const [pCount,   setPCount]   = useState(2);
+  const [players,  setPlayers]  = useState([]);
+  const [turn,     setTurn]     = useState(0);
+  const [target,   setTarget]   = useState(null);
+  const [log,      setLog]      = useState([]);
+  const [anim,     setAnim]     = useState(null);
+  const [crowd,    setCrowd]    = useState([]);
+  const [winner,   setWinner]   = useState(null);
+  const logRef = useRef(null);
+
+  useEffect(()=>{ if(logRef.current) logRef.current.scrollTop=logRef.current.scrollHeight; },[log]);
+
+  const addLog = (txt,type="action") => setLog(l=>[...l,{txt,type}]);
+
+  const spawnCrowd = () => {
+    setCrowd(Array.from({length:6},()=>({e:pick(CROWD),x:rnd(5,92),y:rnd(10,45),id:Math.random()})));
+    setTimeout(()=>setCrowd([]),1800);
+  };
+
+  function startGame(){
+    setPlayers(WIZARDS.slice(0,pCount).map((w,i)=>({...w,id:i,hp:100,maxHp:100,mp:6,maxMp:6,status:null,reflect:false})));
+    setTurn(0); setLog([{txt:"⚔️ The Wizard Duel begins! May the most chaotic mage win!",type:"system"}]);
+    setWinner(null); setTarget(null); setPhase("game");
+  }
+
+  function dmgPlayer(ps,id,dmg){ return ps.map(p=>p.id===id?{...p,hp:Math.max(0,p.hp-dmg)}:p); }
+
+  function doSkip(){
+    const cur=players[turn];
+    addLog(`💤 ${cur.name} rests and recovers 2 MP.`,"warn");
+    let ps=players.map((p,i)=>i===turn?{...p,mp:Math.min(p.maxMp,p.mp+2)}:p);
+    advanceTurn(ps,turn);
+  }
+
+  function advanceTurn(ps,currentTurn){
+    let next=(currentTurn+1)%ps.length;
+    let loops=0;
+    while(ps[next].hp<=0){ next=(next+1)%ps.length; if(++loops>ps.length) break; }
+    if(ps[next].status==="frozen"||ps[next].status==="frog"){
+      const label=ps[next].status==="frog"?"🐸 still a frog":"🥶 frozen solid";
+      addLog(`${ps[next].name} is ${label} — skipping their turn!`,"warn");
+      ps=ps.map(p=>p.id===ps[next].id?{...p,status:null}:p);
+      next=(next+1)%ps.length;
+      loops=0;
+      while(ps[next].hp<=0){ next=(next+1)%ps.length; if(++loops>ps.length) break; }
+    }
+    ps=ps.map((p,i)=>i===next?{...p,mp:Math.min(p.maxMp,p.mp+2)}:p);
+    setPlayers(ps); setTurn(next); setTarget(null);
+  }
+
+  function castSpell(spell){
+    const needsTarget=!spell.aoe&&!spell.nova&&!spell.reflect;
+    if(needsTarget&&target===null) return;
+    let ps=[...players];
+    const caster=ps[turn];
+    if(caster.mp<spell.mp){ addLog(`💸 ${caster.name} doesn't have enough MP!`,"warn"); return; }
+
+    ps=ps.map((p,i)=>i===turn?{...p,mp:Math.max(0,p.mp-spell.mp)}:p);
+    const msgs=[];
+
+    if(Math.random()<spell.backfire){
+      const bf=rnd(10,25);
+      ps=dmgPlayer(ps,turn,bf);
+      msgs.push({txt:`💥 BACKFIRE! ${spell.emoji} ${spell.name} explodes in ${caster.name}'s face for ${bf} damage!`,type:"backfire"});
+      msgs.push({txt:pick(BF_LINES),type:"backfire"});
+      spawnCrowd();
+    } else if(spell.reflect){
+      ps=ps.map(p=>p.id===turn?{...p,reflect:true}:p);
+      msgs.push({txt:`🪞 ${caster.name} raises an Ice Mirror! The next spell will be reflected!`,type:"action"});
+    } else if(target!==null&&ps[target].reflect&&!spell.aoe){
+      ps=ps.map(p=>p.id===target?{...p,reflect:false}:p);
+      const rd=rnd(spell.dmg[0]||5,spell.dmg[1]||20);
+      ps=dmgPlayer(ps,turn,rd);
+      msgs.push({txt:`🪞 REFLECTED! ${ps[target].name}'s mirror sends ${spell.name} back for ${rd} damage!`,type:"backfire"});
+      spawnCrowd();
+    } else if(spell.frog){
+      ps=ps.map(p=>p.id===target?{...p,status:"frog"}:p);
+      msgs.push({txt:`🐸 ${caster.name} hexes ${ps[target].name}! RIBBIT! They're a frog next turn!`,type:"action"});
+      msgs.push({txt:pick(["RIBBIT! A frog appears where a wizard stood!","The transformation is complete. And hilarious.","The frog seems very offended."]),type:"action"});
+      spawnCrowd();
+    } else if(spell.swap){
+      const ch=ps[turn].hp, th=ps[target].hp;
+      ps=ps.map(p=>p.id===turn?{...p,hp:th}:p.id===target?{...p,hp:ch}:p);
+      msgs.push({txt:`🔄 ${caster.name} swaps HP with ${ps[target].name}! (${ch} ↔ ${th})`,type:"action"});
+      msgs.push({txt:pick(["Their souls swap in a blinding flash!","What goes around comes around — literally!","The arena has never seen such sorcery!"]),type:"action"});
+      spawnCrowd();
+    } else if(spell.nova){
+      const effs=["dmg","heal","freeze","frog"];
+      ps.forEach((p,i)=>{
+        if(i===turn||p.hp<=0) return;
+        const eff=pick(effs);
+        if(eff==="dmg"){ const d=rnd(10,30); ps=dmgPlayer(ps,i,d); msgs.push({txt:`🎆 Chaos Nova hits ${p.name} for ${d} damage!`,type:"action"}); }
+        else if(eff==="heal"){ ps=ps.map(x=>x.id===i?{...x,hp:Math.min(x.maxHp,x.hp+15)}:x); msgs.push({txt:`✨ Nova accidentally heals ${p.name} for 15 HP!`,type:"action"}); }
+        else if(eff==="freeze"){ ps=ps.map(x=>x.id===i?{...x,status:"frozen"}:x); msgs.push({txt:`❄️ Nova freezes ${p.name}!`,type:"action"}); }
+        else{ ps=ps.map(x=>x.id===i?{...x,status:"frog"}:x); msgs.push({txt:`🐸 Nova frogs ${p.name}!`,type:"action"}); }
+      });
+      spawnCrowd();
+    } else if(spell.aoe){
+      ps.forEach((p,i)=>{ if(i===turn||p.hp<=0) return; const d=rnd(spell.dmg[0],spell.dmg[1]); ps=dmgPlayer(ps,i,d); msgs.push({txt:`${spell.emoji} ${caster.name}'s ${spell.name} hits ${p.name} for ${d}!`,type:"action"}); });
+      spawnCrowd();
+    } else if(spell.chain){
+      const alive=ps.filter(p=>p.hp>0&&p.id!==turn).slice(0,2);
+      alive.forEach(t=>{ const d=rnd(spell.dmg[0],spell.dmg[1]); ps=dmgPlayer(ps,t.id,d); msgs.push({txt:`⚡ Chain hits ${t.name} for ${d}!`,type:"action"}); });
+      spawnCrowd();
+    } else if(spell.freeze){
+      ps=ps.map(p=>p.id===target?{...p,status:"frozen"}:p);
+      const d=rnd(spell.dmg[0],spell.dmg[1]);
+      if(d>0) ps=dmgPlayer(ps,target,d);
+      msgs.push({txt:`🥶 ${caster.name} freezes ${ps[target].name}${d>0?` for ${d} damage`:""}! They skip next turn!`,type:"action"});
+    } else if(spell.curse){
+      ps=ps.map(p=>p.id===target?{...p,status:spell.curse}:p);
+      const d=rnd(spell.dmg[0],spell.dmg[1]);
+      if(d>0) ps=dmgPlayer(ps,target,d);
+      msgs.push({txt:`😈 ${caster.name} curses ${ps[target].name} with ${spell.curse}${d>0?` (+${d} dmg)`:""}!`,type:"action"});
+    } else {
+      let d=rnd(spell.dmg[0],spell.dmg[1]);
+      if(ps[target]?.status==="shocked"){ d=Math.floor(d/2); ps=ps.map(p=>p.id===target?{...p,status:null}:p); }
+      ps=dmgPlayer(ps,target,d);
+      msgs.push({txt:`${spell.emoji} ${caster.name} hits ${ps[target].name} with ${spell.name} for ${d} damage!`,type:"action"});
+      msgs.push({txt:pick(HIT_LINES),type:"action"});
+      spawnCrowd();
+    }
+
+    if(spell.heal&&!spell.backfire){
+      ps=ps.map(p=>p.id===turn?{...p,hp:Math.min(p.maxHp,p.hp+spell.heal)}:p);
+      msgs.push({txt:`💚 ${caster.name} heals ${spell.heal} HP!`,type:"action"});
+    }
+
+    // Burn tick
+    ps=ps.map(p=>{
+      if(p.status==="burning"&&p.id!==turn&&p.hp>0){ const b=rnd(3,8); msgs.push({txt:`🔥 ${p.name} takes ${b} burn damage!`,type:"action"}); return{...p,hp:Math.max(0,p.hp-b)}; }
+      return p;
+    });
+
+    // Death checks
+    ps.forEach(p=>{ if(p.hp<=0&&players.find(x=>x.id===p.id)?.hp>0){ msgs.push({txt:`💀 ${p.name} has been ELIMINATED! ${pick(KILL_LINES)}`,type:"backfire"}); spawnCrowd(); } });
+
+    msgs.forEach(m=>addLog(m.txt,m.type));
+    setAnim(spell.emoji);
+    setTimeout(()=>setAnim(null),800);
+
+    const alive=ps.filter(p=>p.hp>0);
+    if(alive.length===1){
+      addLog(`🏆 ${alive[0].name} WINS! ${pick(WIN_LINES)}`,"win");
+      setWinner(alive[0]); setPlayers(ps); setPhase("result"); spawnCrowd(); return;
+    }
+
+    setPlayers(ps);
+    advanceTurn(ps,turn);
+  }
+
+  // ── styles ──
+  const wrap  = {minHeight:500,background:"#0f0c1a",borderRadius:16,padding:"1.25rem",color:"#e8d5f0",position:"relative",overflow:"hidden"};
+  const title = {textAlign:"center",fontSize:26,fontWeight:700,background:"linear-gradient(90deg,#f39c12,#9b59b6,#e74c3c)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginBottom:4};
+  const sub   = {textAlign:"center",fontSize:13,color:"#7d6b8a",marginBottom:"1.5rem"};
+  const btn   = (bg,bord)=>({background:bg||"#6c3483",border:`2px solid ${bord||"transparent"}`,color:"#fff",padding:"9px 20px",borderRadius:8,cursor:"pointer",fontSize:14,fontWeight:600,margin:4,fontFamily:"inherit"});
+  const card  = (col,sel,dead)=>({background:sel?col+"22":"#1a1428",border:`2px solid ${sel?col:dead?"#1a1428":"#2d2440"}`,borderRadius:10,padding:"10px 10px 8px",flex:1,minWidth:0,opacity:dead?0.3:1,transition:"all .2s"});
+  const spBtn = (mp,hasMp)=>({background:hasMp?"#1e1535":"#14111f",border:`1px solid ${hasMp?"#5b3a8a":"#2d2440"}`,color:hasMp?"#e8d5f0":"#3d2d5a",borderRadius:9,padding:"9px 11px",cursor:hasMp?"pointer":"default",textAlign:"left",width:"100%",marginBottom:5,fontFamily:"inherit",transition:"background .15s"});
+  const logStyle={background:"#0a0814",borderRadius:10,padding:"10px 13px",height:130,overflowY:"auto",fontSize:12,lineHeight:1.85};
+  const barTrack=(pct,col)=>({height:7,borderRadius:4,background:`linear-gradient(90deg,${col} ${pct}%,#2d2440 ${pct}%)`,transition:"all .4s"});
+  const mpTrack=(pct)=>({height:5,borderRadius:3,background:`linear-gradient(90deg,#3498db ${pct}%,#2d2440 ${pct}%)`,transition:"all .4s"});
+
+  const cur = players[turn];
+
+  return (
+    <div style={wrap}>
+      {crowd.map(c=>(
+        <div key={c.id} style={{position:"absolute",top:c.y+"%",left:c.x+"%",fontSize:22,animation:"popUp .9s ease-out forwards",pointerEvents:"none",zIndex:20}}>{c.e}</div>
+      ))}
+      {anim&&<div style={{position:"absolute",top:"42%",left:"50%",transform:"translate(-50%,-50%)",fontSize:56,zIndex:30,pointerEvents:"none",animation:"popUp .8s forwards"}}>{anim}</div>}
+
+      {/* SETUP */}
+      {phase==="setup"&&(
+        <div style={{animation:"fadeIn .3s"}}>
+          <div style={title}>🧙 Wizard Duel</div>
+          <div style={sub}>Chaotic fantasy multiplayer battle!</div>
+          <div style={{textAlign:"center",marginBottom:"1.5rem"}}>
+            <div style={{fontSize:13,color:"#9b8aab",marginBottom:10}}>How many wizards?</div>
+            {[2,3,4].map(n=>(
+              <button key={n} style={btn(pCount===n?"#6c3483":"#1e1535",pCount===n?"#9b59b6":"#3d2d5a")} onClick={()=>setPCount(n)}>{n} Players</button>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:"1.5rem",flexWrap:"wrap"}}>
+            {WIZARDS.slice(0,pCount).map(w=>(
+              <div key={w.name} style={{flex:1,minWidth:110,background:"#1a1428",border:`2px solid ${w.color}`,borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
+                <div style={{fontSize:30}}>{w.emoji}</div>
+                <div style={{fontWeight:700,color:w.color,fontSize:13,marginTop:4}}>{w.name}</div>
+                <div style={{fontSize:11,color:"#7d6b8a",marginTop:3}}>{w.spell} magic</div>
+                <div style={{fontSize:10,color:"#5a4a6a",marginTop:2}}>100 HP · 6 MP</div>
+              </div>
+            ))}
+          </div>
+          <div style={{textAlign:"center"}}>
+            <button style={{...btn(),fontSize:15,padding:"11px 34px"}} onClick={startGame}>⚔️ Begin the Duel!</button>
+          </div>
+          <div style={{marginTop:"1.5rem",background:"#1a1428",borderRadius:10,padding:"10px 14px",fontSize:12,color:"#6b5a7a",lineHeight:1.8}}>
+            <b style={{color:"#9b8aab"}}>How to play:</b> On your turn, pick a target then cast a spell. Spells cost MP (you gain 2 MP each turn). Watch out for backfires! Last wizard standing wins. 🏆
+          </div>
+        </div>
+      )}
+
+      {/* GAME */}
+      {phase==="game"&&cur&&(
+        <div style={{animation:"fadeIn .2s"}}>
+          <div style={title}>🧙 Wizard Duel</div>
+          {/* Player cards */}
+          <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+            {players.map(p=>(
+              <div key={p.id} style={card(p.color,turn===p.id,p.hp<=0)}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                  <span style={{fontSize:16}}>{p.emoji}</span>
+                  <span style={{fontSize:11,fontWeight:700,color:p.color,flex:1,marginLeft:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</span>
+                  <span style={{fontSize:13}}>{p.status==="frog"?"🐸":p.status==="frozen"?"🥶":p.status==="burning"?"🔥":p.status==="shocked"?"😵":""}</span>
+                </div>
+                {turn===p.id&&p.hp>0&&<div style={{fontSize:9,background:"#6c3483",color:"#fff",borderRadius:3,padding:"1px 5px",marginBottom:3,display:"inline-block",letterSpacing:1}}>YOUR TURN</div>}
+                <div style={{fontSize:10,color:"#9b8aab",marginBottom:2}}>HP {p.hp}/{p.maxHp}</div>
+                <div style={barTrack(Math.max(0,(p.hp/p.maxHp)*100),p.color)}/>
+                <div style={{fontSize:9,color:"#5b7fa6",margin:"3px 0 1px"}}>MP {p.mp}/{p.maxMp}</div>
+                <div style={mpTrack(Math.max(0,(p.mp/p.maxMp)*100))}/>
+              </div>
+            ))}
+          </div>
+
+          {/* Action panel */}
+          <div style={{background:"#1a1428",borderRadius:12,padding:"11px 12px",marginBottom:8}}>
+            <div style={{fontSize:13,color:"#9b8aab",marginBottom:7}}>
+              <span style={{color:cur.color,fontWeight:700}}>{cur.emoji} {cur.name}</span>'s turn — <span style={{color:"#5b7fa6"}}>{cur.mp} MP</span>
+            </div>
+            {/* Target selector */}
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8,alignItems:"center"}}>
+              <span style={{fontSize:11,color:"#5a4a6a",marginRight:2}}>Target:</span>
+              {players.filter(p=>p.hp>0&&p.id!==turn).map(p=>(
+                <button key={p.id} style={{background:target===p.id?p.color+"44":"#0f0c1a",border:`2px solid ${target===p.id?p.color:"#2d2440"}`,color:"#e8d5f0",borderRadius:7,padding:"5px 11px",cursor:"pointer",fontSize:12,fontFamily:"inherit",transition:"all .15s"}} onClick={()=>setTarget(p.id)}>
+                  {p.emoji} {p.name}
+                </button>
+              ))}
+              <button style={{background:"#0f0c1a",border:"2px solid #2d2440",color:"#5a4a6a",borderRadius:7,padding:"5px 10px",cursor:"pointer",fontSize:11,fontFamily:"inherit"}} onClick={doSkip}>
+                💤 Skip (+2MP)
+              </button>
+            </div>
+            {target===null&&<div style={{fontSize:11,color:"#4a3a5a",marginBottom:6,fontStyle:"italic"}}>← Pick a target first (or skip)</div>}
+            {/* Spells */}
+            <div>
+              {SPELLS[cur.spell].map(spell=>{
+                const ok=cur.mp>=spell.mp;
+                return(
+                  <button key={spell.name} style={spBtn(spell.mp,ok)} onClick={()=>castSpell(spell)} disabled={!ok}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontWeight:700,fontSize:13}}>{spell.emoji} {spell.name}</span>
+                      <span style={{fontSize:11,color:ok?"#5b7fa6":"#3d2d5a"}}>{spell.mp} MP</span>
+                    </div>
+                    <div style={{fontSize:11,color:ok?"#7d6b8a":"#3d2d5a",marginTop:2}}>
+                      {spell.desc}{spell.dmg[1]>0?` · ${spell.dmg[0]}–${spell.dmg[1]} dmg`:""}
+                      {spell.backfire>0?` · ${Math.round(spell.backfire*100)}% backfire`:""}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Battle log */}
+          <div ref={logRef} style={logStyle}>
+            {log.map((l,i)=>(
+              <div key={i} style={{color:l.type==="win"?"#f1c40f":l.type==="backfire"?"#e74c3c":l.type==="warn"?"#e67e22":l.type==="system"?"#9b59b6":"#c8b8d8",paddingBottom:1}}>
+                {l.txt}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* RESULT */}
+      {phase==="result"&&winner&&(
+        <div style={{textAlign:"center",padding:"2rem 0",animation:"fadeIn .4s"}}>
+          <div style={{fontSize:64,marginBottom:10}}>{winner.emoji}</div>
+          <div style={title}>🏆 {winner.name} Wins!</div>
+          <div style={{fontSize:14,color:"#9b8aab",margin:"1rem 0 1.5rem",lineHeight:1.9}}>
+            The crowd goes absolutely wild!<br/>The last wizard standing is champion of the arena!
+          </div>
+          <div style={{...logStyle,height:120,marginBottom:"1.5rem",textAlign:"left"}}>
+            {log.slice(-8).map((l,i)=>(
+              <div key={i} style={{color:l.type==="win"?"#f1c40f":l.type==="backfire"?"#e74c3c":"#c8b8d8"}}>{l.txt}</div>
+            ))}
+          </div>
+          <button style={{...btn(),fontSize:15,padding:"11px 34px"}} onClick={()=>setPhase("setup")}>⚔️ Play Again</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
